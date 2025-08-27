@@ -39,7 +39,11 @@
 #define BATTERY_DETECT_GPIO GPIO_NUM_37
 
 #define SDCARD_OPEN_FILE_NUM_MAX 5
+#if CONFIG_IDF_TARGET_ESP32C5
+#define SDCARD_INTR_GPIO GPIO_NUM_0 // Use a valid GPIO for ESP32-C5
+#else
 #define SDCARD_INTR_GPIO GPIO_NUM_34
+#endif
 
 #define AUDIO_CODEC_DEFAULT_CONFIG()               \
   {                                                \

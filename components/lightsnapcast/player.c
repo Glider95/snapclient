@@ -189,9 +189,8 @@ static esp_err_t player_setup_i2s(snapcastSetting_t *setting) {
   i2sDmaBufMaxLen = __dmaBufLen;
 
   // check i2s_set_get_apll_freq() how it is done
-  fi2s_clk = 2 * sr *
-             I2S_MCLK_MULTIPLE_256;  // setting->ch * setting->bits * m_scale;
-
+  fi2s_clk = 2 * sr * I2S_MCLK_MULTIPLE_256;
+#if SOC_I2S_SUPPORTS_APLL
   apll_normal_predefine[0] = bits;
   apll_normal_predefine[1] = sr;
   if (rtc_clk_apll_coeff_calc(
@@ -243,13 +242,17 @@ static esp_err_t player_setup_i2s(snapcastSetting_t *setting) {
            i2sDmaBufMaxLen, i2sDmaBufCnt, sr, bits);
 
   i2s_std_clk_config_t i2s_clkcfg = {
-      .sample_rate_hz = sr,
+  .sample_rate_hz = sr,
 #if USE_SAMPLE_INSERTION
-      .clk_src = I2S_CLK_SRC_DEFAULT,
+  .clk_src = I2S_CLK_SRC_DEFAULT,
 #else
-      .clk_src = I2S_CLK_SRC_APLL,
+#if SOC_I2S_SUPPORTS_APLL && defined(I2S_CLK_SRC_APLL)
+  .clk_src = I2S_CLK_SRC_APLL,
+#else
+  .clk_src = I2S_CLK_SRC_DEFAULT,
 #endif
-      .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+#endif
+  .mclk_multiple = I2S_MCLK_MULTIPLE_256,
   };
   i2s_std_config_t tx_std_cfg = {
       .clk_cfg = i2s_clkcfg,
@@ -268,6 +271,7 @@ static esp_err_t player_setup_i2s(snapcastSetting_t *setting) {
   // my_i2s_channel_enable(tx_chan);
 
   return 0;
+#endif // USE_SAMPLE_INSERTION
 }
 
 /**
@@ -747,6 +751,7 @@ static void tg0_timer1_start(uint64_t alarm_value) {
 // sdm0/65536)/((o_div + 2) * 2) xtal == 40MHz on lyrat v4.3 I2S bit_clock =
 // rate * (number of channels) * bits_per_sample
 void adjust_apll(int8_t direction) {
+#if SOC_I2S_SUPPORTS_APLL
   int sdm0, sdm1, sdm2, o_div;
 
   // only change if necessary
@@ -778,6 +783,7 @@ void adjust_apll(int8_t direction) {
 
   //  periph_rtc_apll_acquire();
   rtc_clk_apll_coeff_set(o_div, sdm0, sdm1, sdm2);
+#endif
   // rtc_clk_apll_enable(1, sdm0, sdm1, sdm2, o_div);
 
   currentDir = direction;

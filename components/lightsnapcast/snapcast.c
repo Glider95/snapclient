@@ -236,14 +236,16 @@ int codec_header_message_deserialize(codec_header_message_t *msg,
   // character
   msg->codec[string_size] = '\0';
 
-  result |= buffer_read_uint32(&buffer, &(msg->size));
+  uint32_t payload_size;
+  result |= buffer_read_uint32(&buffer, &payload_size);
+  msg->size = payload_size;
   if (result) {
     // Can't allocate the proper size string if we didn't read the size, so
     // fail early
     return 1;
   }
 
-  msg->payload = &data[buffer.index];
+  msg->payload = (char *)&data[buffer.index]; // Cast away const, safe if payload is not modified
 
   return result;
 }
@@ -257,7 +259,9 @@ int wire_chunk_message_deserialize(wire_chunk_message_t *msg, const char *data,
 
   result |= buffer_read_int32(&buffer, &(msg->timestamp.sec));
   result |= buffer_read_int32(&buffer, &(msg->timestamp.usec));
-  result |= buffer_read_uint32(&buffer, &(msg->size));
+  uint32_t payload_size;
+  result |= buffer_read_uint32(&buffer, &payload_size);
+  msg->size = payload_size;
 
   // If there's been an error already (especially for the size bit) return
   // early
@@ -265,7 +269,7 @@ int wire_chunk_message_deserialize(wire_chunk_message_t *msg, const char *data,
     return result;
   }
 
-  msg->payload = &data[buffer.index];
+  msg->payload = (char *)&data[buffer.index]; // Cast away const, safe if payload is not modified
 
   // Failed to allocate the memory
   if (!msg->payload) {
