@@ -40,7 +40,7 @@ static const char *TAG = "GENERIC_BOARD";
 
 esp_err_t get_i2c_pins(i2c_port_t port, i2c_config_t *i2c_config) {
   AUDIO_NULL_CHECK(TAG, i2c_config, return ESP_FAIL);
-  if (port == I2C_NUM_0) {
+  if (port == I2C_NUM_0 || port == I2C_NUM_1) {
     i2c_config->sda_io_num = CONFIG_DAC_I2C_SDA;
     i2c_config->scl_io_num = CONFIG_DAC_I2C_SCL;
   } else {
@@ -54,7 +54,7 @@ esp_err_t get_i2c_pins(i2c_port_t port, i2c_config_t *i2c_config) {
 
 esp_err_t get_i2s_pins(i2s_port_t port, board_i2s_pin_t *i2s_config) {
   AUDIO_NULL_CHECK(TAG, i2s_config, return ESP_FAIL);
-  if (port == I2S_NUM_0) {
+  if (port == I2C_NUM_0 || port == I2C_NUM_1) {
     i2s_config->mck_io_num = CONFIG_MASTER_I2S_MCLK_PIN;
     i2s_config->bck_io_num = CONFIG_MASTER_I2S_BCK_PIN;
     i2s_config->ws_io_num = CONFIG_MASTER_I2S_LRCK_PIN;
