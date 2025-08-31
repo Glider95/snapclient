@@ -2656,120 +2656,24 @@ void app_main(void) {
   dsp_processor_init();
 #endif
 
+#ifdef CONFIG_IDF_TARGET_ESP32C5
   xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
-                          OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
-
-  xTaskCreatePinnedToCore(&http_get_task, "http", 15 * 1024, NULL,
-                          HTTP_TASK_PRIORITY, &t_http_get_task,
-                          HTTP_TASK_CORE_ID);
-
-  //  while (1) {
-  //    // audio_event_iface_msg_t msg;
-  //    vTaskDelay(portMAX_DELAY);  //(pdMS_TO_TICKS(5000));
-  //
-  //    // ma120_read_error(0x20);
-  //
-  //    esp_err_t ret = 0;  // audio_event_iface_listen(evt, &msg,
-  //    portMAX_DELAY); if (ret != ESP_OK) {
-  //      ESP_LOGE(TAG, "[ * ] Event interface error : %d", ret);
-  //      continue;
-  //    }
-  //  }
-
-  audioDACdata_t dac_data;
-  audioDACdata_t dac_data_old = {
-    .mute = true,
-    .volume = 100,
-  };
-
-  while(1) {
-  if (xQueueReceive(audioQHdl, &dac_data, pdMS_TO_TICKS(5000)) == pdTRUE) {
-    // Audio data received - process it
-    dac_data_old = dac_data;
-    ESP_LOGI(TAG, "Audio settings: mute=%d, volume=%d", dac_data.mute, dac_data.volume);
-  } else {
-    // Timeout - just log and continue (no audio hardware connected)
-    ESP_LOGI(TAG, "Audio queue timeout - running without audio hardware");
-  }
-}
-}
-*/
-
-void app_main() {
-  ESP_LOGI(TAG, "Start codec chip");
-  
-  // Initialize NVS
-  esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
-  }
-  ESP_ERROR_CHECK(ret);
-  ESP_LOGI(TAG, "NVS initialized successfully");
-  
-  ESP_LOGI(TAG, "About to initialize network...");
-  
-#if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
-  eth_init();
-  init_http_server_task("ETH_DEF");
+                          OTA_TASK_PRIORITY, &t_ota_task, 0);  // Core 0 for ESP32C5
 #else
-  wifi_init();
-  ESP_LOGI(TAG, "Connected to AP");
-  init_http_server_task("WIFI_STA_DEF");
-#endif
-  
-  ESP_LOGI(TAG, "Network and HTTP server initialized successfully");
-  
-  ESP_LOGI(TAG, "About to start OTA server...");
-  
   xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
                           OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
-  
+#endif
+
   ESP_LOGI(TAG, "OTA server started successfully");
   
-  ESP_LOGI(TAG, "About to initialize player and snapcast...");
-  
-  // Initialize basic audio queue for snapcast
-  QueueHandle_t audioQHdl = xQueueCreate(1, sizeof(audioDACdata_t));
-  audioDACSemaphore = xSemaphoreCreateMutex();
-  audioDAC_data.mute = true;
-  audioDAC_data.volume = 100;
-  
-  // Set the global audio queue handle
-  audioDACQHdl = audioQHdl;
-  
-  // Initialize snapcast with the real function
-  // init_snapcast(audioQHdl);
-  
-  // Try to initialize player with dummy I2S config
-  i2s_std_gpio_config_t dummy_i2s_config = {
-    .mclk = GPIO_NUM_NC,
-    .bclk = GPIO_NUM_NC, 
-    .ws = GPIO_NUM_NC,
-    .dout = GPIO_NUM_NC,
-    .din = GPIO_NUM_NC,
-    .invert_flags = {
-      .mclk_inv = false,
-      .bclk_inv = false,
-      .ws_inv = false,
-    },
-  };
-  
-  ESP_LOGI(TAG, "About to initialize player (may fail on ESP32C5)...");
-  int player_result = init_player(dummy_i2s_config, I2S_NUM_0);
-  if (player_result != 0) {
-    ESP_LOGW(TAG, "Player initialization failed (%d), continuing without audio hardware", player_result);
-  } else {
-    ESP_LOGI(TAG, "Player initialized successfully");
-  }
-  
-  ESP_LOGI(TAG, "About to start snapcast network task...");
-  
-  // Start snapcast network task
+#ifdef CONFIG_IDF_TARGET_ESP32C5
   xTaskCreatePinnedToCore(&http_get_task, "http", 15 * 1024, NULL,
-                          HTTP_TASK_PRIORITY, &t_http_get_task,
-                          HTTP_TASK_CORE_ID);
-  
+                          HTTP_TASK_PRIORITY, &t_http_get_task, 0);  // Core 0 for ESP32C5
+#else
+  xTaskCreatePinnedToCore(&http_get_task, "http", 15 * 1024, NULL,
+                          HTTP_TASK_PRIORITY, &t_http_get_task, HTTP_TASK_CORE_ID);
+#endif
+
   ESP_LOGI(TAG, "Snapcast network task started successfully");
   
   audioDACdata_t dac_data;
