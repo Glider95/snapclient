@@ -27,7 +27,8 @@
 #ifndef _BOARD_PINS_CONFIG_H_
 #define _BOARD_PINS_CONFIG_H_
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "driver/i2c.h"           // Add this line for ESP-IDF v4.x compatibility
 #include "driver/i2s_std.h"
 #include "driver/spi_common.h"
 #include "driver/spi_master.h"

@@ -21,6 +21,10 @@
 
 #define TAG "IMPROV"
 
+#ifndef UART_FIFO_LEN
+#define UART_FIFO_LEN 128
+#endif
+
 #define RD_BUF_SIZE (UART_FIFO_LEN)
 #define PATTERN_CHR_NUM (3)
 

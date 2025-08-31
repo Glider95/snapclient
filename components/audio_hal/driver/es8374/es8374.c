@@ -25,13 +25,16 @@
  */
 
 #include "es8374.h"
-
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include <string.h>
 
 #include "board_pins_config.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "i2c_bus.h"
+#include "es7148.h"
+
 
 #define ES8374_TAG "ES8374_DRIVER"
 

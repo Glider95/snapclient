@@ -30,7 +30,7 @@
 #include <string.h>
 
 #include "audio_mem.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
 

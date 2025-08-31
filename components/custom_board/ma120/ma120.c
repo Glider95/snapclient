@@ -15,7 +15,7 @@
 #include <stdio.h>
 
 #include "board.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 
 static const char *TAG = "MA120";

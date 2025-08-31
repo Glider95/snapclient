@@ -31,6 +31,8 @@
 #include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
 
 #define MCLK_PULSES_NUMBER (20)
 #define ES_ASSERT(a, format, b, ...)      \

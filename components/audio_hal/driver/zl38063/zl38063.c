@@ -31,7 +31,7 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "driver/gpio.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "tw_spi_access.h"
 #include "vprocTwolf_access.h"

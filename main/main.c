@@ -18,6 +18,9 @@
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 #include "hal/gpio_types.h"
+#include "driver/gpio.h" 
+
+
 #if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || \
     CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
 #include "eth_interface.h"
@@ -82,11 +85,11 @@ static FLAC__StreamDecoder *flacDecoder = NULL;
 
 const char *VERSION_STRING = "0.0.3";
 
-#define HTTP_TASK_PRIORITY 9
-#define HTTP_TASK_CORE_ID tskNO_AFFINITY
+#define HTTP_TASK_PRIORITY 0
+#define HTTP_TASK_CORE_ID 0
 
 #define OTA_TASK_PRIORITY 6
-#define OTA_TASK_CORE_ID tskNO_AFFINITY
+#define OTA_TASK_CORE_ID 0
 // 1  // tskNO_AFFINITY
 
 TaskHandle_t t_ota_task = NULL;
@@ -430,12 +433,12 @@ void error_callback(const FLAC__StreamDecoder *decoder,
 /**
  *
  */
-void init_snapcast(QueueHandle_t audioQHdl) {
-  audioDACQHdl = audioQHdl;
-  audioDACSemaphore = xSemaphoreCreateMutex();
-  audioDAC_data.mute = true;
-  audioDAC_data.volume = 100;
-}
+// void init_snapcast(QueueHandle_t audioQHdl) {
+//   audioDACQHdl = audioQHdl;
+//   audioDACSemaphore = xSemaphoreCreateMutex();
+//   audioDAC_data.mute = true;
+//   audioDAC_data.volume = 100;
+// }
 
 /**
  *
@@ -476,10 +479,8 @@ static void http_get_task(void *pvParameters) {
   int64_t tmpDiffToServer;
   int64_t lastTimeSync = 0;
   esp_timer_handle_t timeSyncMessageTimer = NULL;
-  esp_err_t err = 0;
   server_settings_message_t server_settings_message;
   bool received_header = false;
-  mdns_result_t *r;
   codec_type_t codec = NONE;
   snapcastSetting_t scSet;
   pcm_chunk_message_t *pcmData = NULL;
@@ -2446,6 +2447,7 @@ static void http_get_task(void *pvParameters) {
 /**
  *
  */
+/*
 void app_main(void) {
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
@@ -2543,21 +2545,21 @@ void app_main(void) {
 #endif
 
   ESP_LOGI(TAG, "Start codec chip");
-  audio_board_handle_t board_handle = audio_board_init();
-  if (board_handle) {
-    ESP_LOGI(TAG, "Audio board_init done");
-  } else {
-    ESP_LOGE(TAG,
-             "Audio board couldn't be initialized. Check menuconfig if project "
-             "is configured right or check your wiring!");
+  // audio_board_handle_t board_handle = audio_board_init();
+  // if (board_handle) {
+  //   ESP_LOGI(TAG, "Audio board_init done");
+  // } else {
+  //   ESP_LOGE(TAG,
+  //            "Audio board couldn't be initialized. Check menuconfig if project "
+  //            "is configured right or check your wiring!");
 
-    vTaskDelay(portMAX_DELAY);
-  }
+  //   vTaskDelay(portMAX_DELAY);
+  // }
 
-  audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE,
-                       AUDIO_HAL_CTRL_START);
-  audio_hal_set_mute(board_handle->audio_hal,
-                     true);  // ensure no noise is sent after firmware crash
+  // audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE,
+  //                      AUDIO_HAL_CTRL_START);
+  // audio_hal_set_mute(board_handle->audio_hal,
+  //                    true);  // ensure no noise is sent after firmware crash
 
 #if CONFIG_AUDIO_BOARD_CUSTOM && CONFIG_DAC_ADAU1961
   if (tx_chan) {
@@ -2600,8 +2602,13 @@ void app_main(void) {
 
   QueueHandle_t audioQHdl = xQueueCreate(1, sizeof(audioDACdata_t));
 
-  init_snapcast(audioQHdl);
-  init_player(i2s_pin_config0, I2S_NUM_0);
+  // Initialize the basic audio structures for testing
+  audioDACSemaphore = xSemaphoreCreateMutex();
+  audioDAC_data.mute = true;
+  audioDAC_data.volume = 100;
+
+  // init_snapcast(audioQHdl);
+  // init_player(i2s_pin_config0, I2S_NUM_0);
 
   // ensure there is no noise from DAC
   {
@@ -2676,14 +2683,105 @@ void app_main(void) {
   };
 
   while(1) {
-    if (xQueueReceive(audioQHdl, &dac_data, portMAX_DELAY) == pdTRUE) {
-      if (dac_data.mute != dac_data_old.mute){
-        audio_hal_set_mute(board_handle->audio_hal, dac_data.mute);
-      }
-      if (dac_data.volume != dac_data_old.volume){
-        audio_hal_set_volume(board_handle->audio_hal, dac_data.volume);
-      }
-      dac_data_old = dac_data;
+  if (xQueueReceive(audioQHdl, &dac_data, pdMS_TO_TICKS(5000)) == pdTRUE) {
+    // Audio data received - process it
+    dac_data_old = dac_data;
+    ESP_LOGI(TAG, "Audio settings: mute=%d, volume=%d", dac_data.mute, dac_data.volume);
+  } else {
+    // Timeout - just log and continue (no audio hardware connected)
+    ESP_LOGI(TAG, "Audio queue timeout - running without audio hardware");
+  }
+}
+}
+*/
+
+void app_main() {
+  ESP_LOGI(TAG, "Start codec chip");
+  
+  // Initialize NVS
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+  ESP_LOGI(TAG, "NVS initialized successfully");
+  
+  ESP_LOGI(TAG, "About to initialize network...");
+  
+#if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
+  eth_init();
+  init_http_server_task("ETH_DEF");
+#else
+  wifi_init();
+  ESP_LOGI(TAG, "Connected to AP");
+  init_http_server_task("WIFI_STA_DEF");
+#endif
+  
+  ESP_LOGI(TAG, "Network and HTTP server initialized successfully");
+  
+  ESP_LOGI(TAG, "About to start OTA server...");
+  
+  xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
+                          OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
+  
+  ESP_LOGI(TAG, "OTA server started successfully");
+  
+  ESP_LOGI(TAG, "About to initialize player and snapcast...");
+  
+  // Initialize basic audio queue for snapcast
+  QueueHandle_t audioQHdl = xQueueCreate(1, sizeof(audioDACdata_t));
+  audioDACSemaphore = xSemaphoreCreateMutex();
+  audioDAC_data.mute = true;
+  audioDAC_data.volume = 100;
+  
+  // Set the global audio queue handle
+  audioDACQHdl = audioQHdl;
+  
+  // Initialize snapcast with the real function
+  // init_snapcast(audioQHdl);
+  
+  // Try to initialize player with dummy I2S config
+  i2s_std_gpio_config_t dummy_i2s_config = {
+    .mclk = GPIO_NUM_NC,
+    .bclk = GPIO_NUM_NC, 
+    .ws = GPIO_NUM_NC,
+    .dout = GPIO_NUM_NC,
+    .din = GPIO_NUM_NC,
+    .invert_flags = {
+      .mclk_inv = false,
+      .bclk_inv = false,
+      .ws_inv = false,
+    },
+  };
+  
+  ESP_LOGI(TAG, "About to initialize player (may fail on ESP32C5)...");
+  int player_result = init_player(dummy_i2s_config, I2S_NUM_0);
+  if (player_result != 0) {
+    ESP_LOGW(TAG, "Player initialization failed (%d), continuing without audio hardware", player_result);
+  } else {
+    ESP_LOGI(TAG, "Player initialized successfully");
+  }
+  
+  ESP_LOGI(TAG, "About to start snapcast network task...");
+  
+  // Start snapcast network task
+  xTaskCreatePinnedToCore(&http_get_task, "http", 15 * 1024, NULL,
+                          HTTP_TASK_PRIORITY, &t_http_get_task,
+                          HTTP_TASK_CORE_ID);
+  
+  ESP_LOGI(TAG, "Snapcast network task started successfully");
+  
+  audioDACdata_t dac_data;
+  
+  while(1) {
+    if (xQueueReceive(audioQHdl, &dac_data, pdMS_TO_TICKS(5000)) == pdTRUE) {
+      ESP_LOGI(TAG, "Audio settings: mute=%d, volume=%d", dac_data.mute, dac_data.volume);
+    } else {
+      ESP_LOGI(TAG, "System running - Web: 192.168.100.200:8000, OTA: snapclient.local:8032");
     }
   }
 }
+
+
+

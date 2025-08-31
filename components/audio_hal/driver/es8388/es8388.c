@@ -32,6 +32,8 @@
 #include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
 
 #if defined(CONFIG_ESP_LYRAT_V4_3_BOARD) || \
     defined(CONFIG_ESP_AI_THINKER_ES8388_BOARD)

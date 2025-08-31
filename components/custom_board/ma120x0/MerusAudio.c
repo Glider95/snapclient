@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "ma120x0.h"
 // #include "ma120_rev1_all.h"

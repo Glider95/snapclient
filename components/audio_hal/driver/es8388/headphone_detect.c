@@ -29,6 +29,7 @@
 
 #include "board.h"
 #include "driver/gpio.h"
+#include "driver/i2c_master.h"
 #include "es8388.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"

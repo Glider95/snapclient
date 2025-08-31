@@ -31,6 +31,7 @@
 #include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "driver/gpio.h"
 
 #define I2S_DSP_MODE 0
 #define MCLK_DIV_FRE 256

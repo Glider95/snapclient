@@ -29,6 +29,7 @@
 #include "esp_log.h"
 #include "i2c_bus.h"
 #include "tas5805m_reg_cfg.h"
+#include "driver/gpio.h" 
 
 static const char *TAG = "TAS5805M";
 
@@ -128,124 +129,125 @@ esp_err_t tas5805m_write_byte(uint8_t register_name, uint8_t value) {
 
 // Inits the TAS5805M change Settings in Menuconfig to enable Bridge-Mode
 
-esp_err_t tas5805m_init() {
-  int ret = 0;
-  // Init the I2C-Driver
-  i2c_master_init();
-  /* Register the PDN pin as output and write 1 to enable the TAS chip */
-  /* TAS5805M.INIT() */
-  gpio_config_t io_conf;
-  io_conf.intr_type = GPIO_INTR_DISABLE;
-  io_conf.mode = GPIO_MODE_OUTPUT;
-  io_conf.pin_bit_mask = TAS5805M_GPIO_PDN_MASK;
-  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
-  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
-  ESP_LOGW(TAG, "Power down pin: %d", TAS5805M_GPIO_PDN);
-  gpio_config(&io_conf);
-  gpio_set_level(TAS5805M_GPIO_PDN, 0);
-  vTaskDelay(10 / portTICK_PERIOD_MS);
-  gpio_set_level(TAS5805M_GPIO_PDN, 1);
-  vTaskDelay(10 / portTICK_PERIOD_MS);
+esp_err_t tas5805m_init(audio_hal_codec_config_t *codec_cfg) {
+    // You can ignore codec_cfg if not needed
+    int ret = 0;
+    // Init the I2C-Driver
+    i2c_master_init();
+    /* Register the PDN pin as output and write 1 to enable the TAS chip */
+    /* TAS5805M.INIT() */
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = TAS5805M_GPIO_PDN_MASK;
+    io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    ESP_LOGW(TAG, "Power down pin: %d", TAS5805M_GPIO_PDN);
+    gpio_config(&io_conf);
+    gpio_set_level(TAS5805M_GPIO_PDN, 0);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    gpio_set_level(TAS5805M_GPIO_PDN, 1);
+    vTaskDelay(10 / portTICK_PERIOD_MS);
 
-  /* TAS5805M.Begin()*/
+    /* TAS5805M.Begin()*/
 
-  ESP_LOGW(TAG, "Setting to HI Z");
+    ESP_LOGW(TAG, "Setting to HI Z");
 
-  ESP_ERROR_CHECK(tas5805m_write_byte(TAS5805M_DEVICE_CTRL_2_REGISTER, 0x02));
-  vTaskDelay(10 / portTICK_PERIOD_MS);
-  if (ret != ESP_OK) {
-    ESP_LOGW(TAG, "TAS5805M_DEVICE_CTRL_2_REGISTER, 0x02 FAILED!!!");
-    return ret;
-  }
+    ESP_ERROR_CHECK(tas5805m_write_byte(TAS5805M_DEVICE_CTRL_2_REGISTER, 0x02));
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "TAS5805M_DEVICE_CTRL_2_REGISTER, 0x02 FAILED!!!");
+      return ret;
+    }
 
-  ESP_LOGW(TAG, "Setting to PLAY");
+    ESP_LOGW(TAG, "Setting to PLAY");
 
-  ret = tas5805m_write_byte(TAS5805M_DEVICE_CTRL_2_REGISTER, 0x03);
-  if (ret != ESP_OK) {
-    ESP_LOGW(TAG, "TAS5805M_DEVICE_CTRL_2_REGISTER, 0x03 FAILED!!");
-    return ret;
-  }
+    ret = tas5805m_write_byte(TAS5805M_DEVICE_CTRL_2_REGISTER, 0x03);
+    if (ret != ESP_OK) {
+      ESP_LOGW(TAG, "TAS5805M_DEVICE_CTRL_2_REGISTER, 0x03 FAILED!!");
+      return ret;
+    }
 
-  // Check if Bridge-Mode is enabled
-#if defined(CONFIG_DAC_BRIDGE_MODE_MONO) || defined(CONFIG_DAC_BRIDGE_MODE_LEFT) || defined(CONFIG_DAC_BRIDGE_MODE_RIGHT)
-  ESP_LOGV(TAG, "Setting Bridge-Mode");
+    // Check if Bridge-Mode is enabled
+  #if defined(CONFIG_DAC_BRIDGE_MODE_MONO) || defined(CONFIG_DAC_BRIDGE_MODE_LEFT) || defined(CONFIG_DAC_BRIDGE_MODE_RIGHT)
+    ESP_LOGV(TAG, "Setting Bridge-Mode");
 
-  // enable bridge mode
-  ret = tas5805m_write_byte(TAS5805M_DEVICE_CTRL_1_REGISTER, 0x04);
-  
-  // Mixer config
-  ret |= tas5805m_write_byte(0x0, 0x0);
-  ret |= tas5805m_write_byte(0x7f, 0x8c);
-  ret |= tas5805m_write_byte(0x0, 0x29);
+    // enable bridge mode
+    ret = tas5805m_write_byte(TAS5805M_DEVICE_CTRL_1_REGISTER, 0x04);
+    
+    // Mixer config
+    ret |= tas5805m_write_byte(0x0, 0x0);
+    ret |= tas5805m_write_byte(0x7f, 0x8c);
+    ret |= tas5805m_write_byte(0x0, 0x29);
 
-  #if defined(CONFIG_DAC_BRIDGE_MODE_MONO)
-  ESP_LOGI(TAG, "Defining Bridge-Mode to Mono");
-  // Left mixer input to left ouput (-6 dB)
-  ret |= tas5805m_write_byte(0x18, 0x00);
-  ret |= tas5805m_write_byte(0x19, 0x40);
-  ret |= tas5805m_write_byte(0x1a, 0x26);
-  ret |= tas5805m_write_byte(0x1b, 0xe7);
+    #if defined(CONFIG_DAC_BRIDGE_MODE_MONO)
+    ESP_LOGI(TAG, "Defining Bridge-Mode to Mono");
+    // Left mixer input to left ouput (-6 dB)
+    ret |= tas5805m_write_byte(0x18, 0x00);
+    ret |= tas5805m_write_byte(0x19, 0x40);
+    ret |= tas5805m_write_byte(0x1a, 0x26);
+    ret |= tas5805m_write_byte(0x1b, 0xe7);
 
-  // Right mixer input to left ouput (-6 dB)
-  ret |= tas5805m_write_byte(0x1c, 0x00);
-  ret |= tas5805m_write_byte(0x1d, 0x40);
-  ret |= tas5805m_write_byte(0x1e, 0x26);
-  ret |= tas5805m_write_byte(0x1f, 0xe7);
+    // Right mixer input to left ouput (-6 dB)
+    ret |= tas5805m_write_byte(0x1c, 0x00);
+    ret |= tas5805m_write_byte(0x1d, 0x40);
+    ret |= tas5805m_write_byte(0x1e, 0x26);
+    ret |= tas5805m_write_byte(0x1f, 0xe7);
 
-  #elif defined(CONFIG_DAC_BRIDGE_MODE_LEFT)
-  ESP_LOGI(TAG, "Defining Bridge-Mode to Left");
-  // Left mixer input to left ouput (0 dB)
-  ret |= tas5805m_write_byte(0x18, 0x00);
-  ret |= tas5805m_write_byte(0x19, 0x80);
-  ret |= tas5805m_write_byte(0x1a, 0x00);
-  ret |= tas5805m_write_byte(0x1b, 0x00);
+    #elif defined(CONFIG_DAC_BRIDGE_MODE_LEFT)
+    ESP_LOGI(TAG, "Defining Bridge-Mode to Left");
+    // Left mixer input to left ouput (0 dB)
+    ret |= tas5805m_write_byte(0x18, 0x00);
+    ret |= tas5805m_write_byte(0x19, 0x80);
+    ret |= tas5805m_write_byte(0x1a, 0x00);
+    ret |= tas5805m_write_byte(0x1b, 0x00);
 
-  // Right mixer input to left ouput (-110 dB)
-  ret |= tas5805m_write_byte(0x1c, 0x00);
-  ret |= tas5805m_write_byte(0x1d, 0x00);
-  ret |= tas5805m_write_byte(0x1e, 0x00);
-  ret |= tas5805m_write_byte(0x1f, 0x00);
+    // Right mixer input to left ouput (-110 dB)
+    ret |= tas5805m_write_byte(0x1c, 0x00);
+    ret |= tas5805m_write_byte(0x1d, 0x00);
+    ret |= tas5805m_write_byte(0x1e, 0x00);
+    ret |= tas5805m_write_byte(0x1f, 0x00);
 
-  #elif defined(CONFIG_DAC_BRIDGE_MODE_RIGHT)
-  ESP_LOGI(TAG, "Defining Bridge-Mode to Right");
-  // Left mixer input to left ouput (-110 dB)
-  ret |= tas5805m_write_byte(0x18, 0x00);
-  ret |= tas5805m_write_byte(0x19, 0x00);
-  ret |= tas5805m_write_byte(0x1a, 0x00);
-  ret |= tas5805m_write_byte(0x1b, 0x00);
+    #elif defined(CONFIG_DAC_BRIDGE_MODE_RIGHT)
+    ESP_LOGI(TAG, "Defining Bridge-Mode to Right");
+    // Left mixer input to left ouput (-110 dB)
+    ret |= tas5805m_write_byte(0x18, 0x00);
+    ret |= tas5805m_write_byte(0x19, 0x00);
+    ret |= tas5805m_write_byte(0x1a, 0x00);
+    ret |= tas5805m_write_byte(0x1b, 0x00);
 
-  // Right mixer input to left ouput (0 dB)
-  ret |= tas5805m_write_byte(0x1c, 0x00);
-  ret |= tas5805m_write_byte(0x1d, 0x80);
-  ret |= tas5805m_write_byte(0x1e, 0x00);
-  ret |= tas5805m_write_byte(0x1f, 0x00);
+    // Right mixer input to left ouput (0 dB)
+    ret |= tas5805m_write_byte(0x1c, 0x00);
+    ret |= tas5805m_write_byte(0x1d, 0x80);
+    ret |= tas5805m_write_byte(0x1e, 0x00);
+    ret |= tas5805m_write_byte(0x1f, 0x00);
 
+    #endif
+
+    // Left mixer input to right ouput (-110 dB as the right output is not used)
+    ret |= tas5805m_write_byte(0x20, 0x00);
+    ret |= tas5805m_write_byte(0x21, 0x00);
+    ret |= tas5805m_write_byte(0x22, 0x00);
+    ret |= tas5805m_write_byte(0x23, 0x00);
+
+    // Right mixer input to right ouput (-110 dB as the right output is not used)
+    ret |= tas5805m_write_byte(0x24, 0x00);
+    ret |= tas5805m_write_byte(0x25, 0x00);
+    ret |= tas5805m_write_byte(0x26, 0x00);
+    ret |= tas5805m_write_byte(0x27, 0x00);
+
+
+    // End config
+    ret |= tas5805m_write_byte(0x0, 0x0);
+    ret |= tas5805m_write_byte(0x7f, 0x0);
+
+    if (ret != ESP_OK) {
+      ESP_LOGE(TAG, "Setting Bridge-Mode failed");
+      return ret;
+    }
   #endif
 
-  // Left mixer input to right ouput (-110 dB as the right output is not used)
-  ret |= tas5805m_write_byte(0x20, 0x00);
-  ret |= tas5805m_write_byte(0x21, 0x00);
-  ret |= tas5805m_write_byte(0x22, 0x00);
-  ret |= tas5805m_write_byte(0x23, 0x00);
-
-  // Right mixer input to right ouput (-110 dB as the right output is not used)
-  ret |= tas5805m_write_byte(0x24, 0x00);
-  ret |= tas5805m_write_byte(0x25, 0x00);
-  ret |= tas5805m_write_byte(0x26, 0x00);
-  ret |= tas5805m_write_byte(0x27, 0x00);
-
-
-  // End config
-  ret |= tas5805m_write_byte(0x0, 0x0);
-  ret |= tas5805m_write_byte(0x7f, 0x0);
-
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Setting Bridge-Mode failed");
     return ret;
-  }
-#endif
-
-  return ret;
 }
 
 // Setting the Volume

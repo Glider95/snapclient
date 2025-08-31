@@ -66,7 +66,7 @@ extern "C"
    *     - ESP_OK
    *     - ESP_FAIL
    */
-  esp_err_t tas5805m_init ();
+  esp_err_t tas5805m_init(audio_hal_codec_config_t *codec_cfg);
 
   /**
    * @brief Deinitialize TAS5805 codec chip

@@ -32,7 +32,12 @@
 #define USE_SAMPLE_INSERTION CONFIG_USE_SAMPLE_INSERTION
 
 #define SYNC_TASK_PRIORITY (configMAX_PRIORITIES - 1)
-#define SYNC_TASK_CORE_ID 1  // tskNO_AFFINITY
+
+#if CONFIG_FREERTOS_UNICORE
+#define SYNC_TASK_CORE_ID 0  // ESP32C5 - single core only
+#else
+#define SYNC_TASK_CORE_ID 1  // ESP32/ESP32S3 - multi-core, use core 1
+#endif
 
 static const char *TAG = "PLAYER";
 

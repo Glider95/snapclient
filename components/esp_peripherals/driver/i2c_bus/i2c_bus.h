@@ -26,7 +26,10 @@
 #ifndef _IOT_I2C_BUS_H_
 #define _IOT_I2C_BUS_H_
 
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "driver/i2c.h"           // <-- add this line if you still get errors
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -117,7 +120,7 @@ esp_err_t i2c_bus_delete(i2c_bus_handle_t bus);
  *     - ESP_FAIL Fail
  */
 esp_err_t i2c_bus_cmd_begin(i2c_bus_handle_t bus, i2c_cmd_handle_t cmd,
-                            portBASE_TYPE ticks_to_wait);
+                            TickType_t ticks_to_wait);
 
 /**
  * @brief Auto probe the I2C device

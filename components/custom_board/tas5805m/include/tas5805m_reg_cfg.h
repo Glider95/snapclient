@@ -48,7 +48,7 @@ extern "C"
 #ifdef PIN_DAC_PWDN
 #define TAS5805M_GPIO_PDN PIN_DAC_PWDN
 #else
-#define TAS5805M_GPIO_PDN GPIO_NUM_33 /*!< GPIO used for !PDN pin */
+#define TAS5805M_GPIO_PDN GPIO_NUM_10 /*!< GPIO used for !PDN pin */
 #endif 
 
 #define TAS5805M_GPIO_PDN_MASK ((1ULL << TAS5805M_GPIO_PDN))

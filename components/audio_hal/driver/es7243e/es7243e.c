@@ -29,6 +29,7 @@
 #include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "driver/gpio.h"
 
 static char *TAG = "DRV7243E";
 static i2c_bus_handle_t i2c_handle;

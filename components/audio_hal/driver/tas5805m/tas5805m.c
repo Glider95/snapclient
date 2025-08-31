@@ -31,6 +31,8 @@
 #include "esp_log.h"
 #include "i2c_bus.h"
 #include "tas5805m_reg_cfg.h"
+#include "driver/gpio.h" 
+#include "driver/i2c_master.h"
 
 static const char *TAG = "TAS5805M";
 

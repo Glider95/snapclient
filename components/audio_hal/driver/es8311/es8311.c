@@ -32,6 +32,8 @@
 #include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
 
 /* ES8311 address
  * 0x32:CE=1;0x30:CE=0

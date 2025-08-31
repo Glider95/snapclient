@@ -24,14 +24,18 @@
  *
  */
 
+#include "driver/i2c_master.h"
+#include "driver/i2c.h"           // Add this line for ESP-IDF v4.x compatibility
+
 #include "es8156.h"
 
 #include "audio_volume.h"
-#include "board.h"
 #include "driver/gpio.h"
+#include "board.h"
 #include "esp_log.h"
 #include "i2c_bus.h"
 #include "string.h"
+#include "driver/gpio.h"
 
 #define ES8156_ADDR 0x10
 

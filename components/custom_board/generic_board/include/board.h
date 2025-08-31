@@ -27,9 +27,11 @@
 #ifndef _AUDIO_BOARD_H_
 #define _AUDIO_BOARD_H_
 
+#include "driver/i2c_master.h"
 #include "audio_hal.h"
 #include "board_def.h"
 #include "board_pins_config.h"
+
 //#include "esp_peripherals.h"
 //#include "periph_sdcard.h"
 

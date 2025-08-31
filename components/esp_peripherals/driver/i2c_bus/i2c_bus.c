@@ -31,7 +31,10 @@
 
 #include "audio_mem.h"
 #include "audio_mutex.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
+#include "driver/i2c.h"           // <-- add this line if you still get errors
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "esp_log.h"
 
 #define ESP_INTR_FLG_DEFAULT (0)
@@ -192,7 +195,7 @@ esp_err_t i2c_bus_delete(i2c_bus_handle_t bus) {
 }
 
 esp_err_t i2c_bus_cmd_begin(i2c_bus_handle_t bus, i2c_cmd_handle_t cmd,
-                            portBASE_TYPE ticks_to_wait) {
+                            TickType_t ticks_to_wait) {
   I2C_BUS_CHECK(bus != NULL, "Handle error", ESP_FAIL);
   I2C_BUS_CHECK(cmd != NULL, "I2C cmd error", ESP_FAIL);
   i2c_bus_t *p_bus = (i2c_bus_t *)bus;
