@@ -406,6 +406,18 @@ static FLAC__StreamDecoderWriteStatus write_callback(
   flacData->bytes = frame->header.blocksize * frame->header.channels *
                     (frame->header.bits_per_sample / 8);
 
+  // Log FLAC frame information
+  ESP_LOGI(TAG, "FLAC frame: blocksize=%d, channels=%d, bits=%d, sample_rate=%d, bytes=%d",
+           frame->header.blocksize, frame->header.channels, 
+           frame->header.bits_per_sample, frame->header.sample_rate, flacData->bytes);
+
+  // Log first few decoded samples for debugging
+  if (buffer[0] && buffer[1] && frame->header.blocksize > 0) {
+    ESP_LOGI(TAG, "FLAC samples: L=[%d, %d, %d] R=[%d, %d, %d]",
+             buffer[0][0], frame->header.blocksize > 1 ? buffer[0][1] : 0, frame->header.blocksize > 2 ? buffer[0][2] : 0,
+             buffer[1][0], frame->header.blocksize > 1 ? buffer[1][1] : 0, frame->header.blocksize > 2 ? buffer[1][2] : 0);
+  }
+
   ret = allocate_pcm_chunk_memory(&(flacData->outData), flacData->bytes);
 
   //   ESP_LOGI (TAG, "mem %p %p %d", flacData->outData,
@@ -556,7 +568,14 @@ static void flac_decoder_task(void *pvParameters)
 
   while (1)
   {
-    FLAC__stream_decoder_process_until_end_of_stream(flacDecoder);
+    // Process FLAC stream but yield to prevent watchdog timeout
+    if (!FLAC__stream_decoder_process_single(flacDecoder)) {
+      ESP_LOGW(TAG, "FLAC decoder process_single failed, resetting");
+      FLAC__stream_decoder_reset(flacDecoder);
+    }
+    
+    // Yield to other tasks to prevent watchdog timeout
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
 
@@ -639,6 +658,28 @@ void flac_task(void *pvParameters)
           ESP_LOGI(TAG, "flac_decoder_task: headless mode - skipping player_send_snapcast_setting");
         }
 
+        // Log audio data information
+        if (pcmData && pcmData->fragment && pcmData->fragment->payload) {
+          uint16_t *samples = (uint16_t*)pcmData->fragment->payload;
+          uint32_t sample_count = pcmData->fragment->size / sizeof(uint16_t);
+          
+          // Log first few samples for debugging
+          ESP_LOGI(TAG, "Audio data: size=%d bytes, samples=%d, first_samples=[%d, %d, %d, %d]", 
+                   pcmData->fragment->size, sample_count,
+                   sample_count > 0 ? samples[0] : 0,
+                   sample_count > 1 ? samples[1] : 0, 
+                   sample_count > 2 ? samples[2] : 0,
+                   sample_count > 3 ? samples[3] : 0);
+          
+          // Calculate and log peak levels for monitoring
+          uint16_t peak_left = 0, peak_right = 0;
+          for (uint32_t i = 0; i < sample_count && i < 512; i += 2) { // Check first 256 stereo samples
+            if (i < sample_count) peak_left = samples[i] > peak_left ? samples[i] : peak_left;
+            if (i+1 < sample_count) peak_right = samples[i+1] > peak_right ? samples[i+1] : peak_right;
+          }
+          ESP_LOGI(TAG, "Audio peaks: L=%d, R=%d (16-bit)", peak_left, peak_right);
+        }
+
 #if CONFIG_USE_DSP_PROCESSOR
         dsp_processor_worker(pcmData->fragment->payload,
                              pcmData->fragment->size, scSet->sr);
@@ -663,6 +704,9 @@ void flac_task(void *pvParameters)
         free_flac_data(pFlacData);
       }
     }
+    
+    // Small yield to help with task scheduling and prevent watchdog
+    taskYIELD();
   }
 }
 
@@ -1618,6 +1662,14 @@ static void http_get_task(void *pvParameters)
                       memcpy(pDecData->inData, start, tmp_size);
                       pDecData->outData = NULL;
                       pDecData->type = SNAPCAST_MESSAGE_WIRE_CHUNK;
+
+                      // Log incoming FLAC data
+                      ESP_LOGI(TAG, "Received FLAC chunk: size=%d bytes, timestamp=%d.%06d, first_bytes=[0x%02x, 0x%02x, 0x%02x, 0x%02x]",
+                               tmp_size, (int)wire_chnk.timestamp.sec, (int)wire_chnk.timestamp.usec,
+                               tmp_size > 0 ? pDecData->inData[0] : 0,
+                               tmp_size > 1 ? pDecData->inData[1] : 0,
+                               tmp_size > 2 ? pDecData->inData[2] : 0,
+                               tmp_size > 3 ? pDecData->inData[3] : 0);
 
                       // send data to separate task which will handle
                       // this
