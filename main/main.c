@@ -65,6 +65,8 @@
 #include "snapcast.h"
 #include "ui_http_server.h"
 
+bool headless_mode = false;
+
 static FLAC__StreamDecoderReadStatus read_callback(
     const FLAC__StreamDecoder *decoder, FLAC__byte buffer[], size_t *bytes,
     void *client_data);
@@ -618,17 +620,23 @@ void flac_task(void *pvParameters)
         size_t decodedSize = pcmData->totalSize; // pFlacData->bytes;
         scSet->chkInFrames =
             decodedSize / ((size_t)scSet->ch * (size_t)(scSet->bits / 8));
-        if (player_send_snapcast_setting(scSet) != pdPASS)
-        {
-          ESP_LOGE(TAG,
-                   "Failed to "
-                   "notify "
-                   "sync task "
-                   "about "
-                   "codec. Did you "
-                   "init player?");
+        
+        // Skip player notification in headless mode
+        if (!headless_mode) {
+          if (player_send_snapcast_setting(scSet) != pdPASS)
+          {
+            ESP_LOGE(TAG,
+                     "Failed to "
+                     "notify "
+                     "sync task "
+                     "about "
+                     "codec. Did you "
+                     "init player?");
 
-          return;
+            return;
+          }
+        } else {
+          ESP_LOGI(TAG, "flac_decoder_task: headless mode - skipping player_send_snapcast_setting");
         }
 
 #if CONFIG_USE_DSP_PROCESSOR
@@ -730,9 +738,15 @@ void opus_decoder_task(void *pvParameters)
               free(audio);
               audio = NULL;
             }
-            if (player_send_snapcast_setting(scSet) != pdPASS) {
-              ESP_LOGE(TAG, "Failed to notify sync task about codec. Did you init player?");
-              return;
+            
+            // Skip player notification in headless mode
+            if (!headless_mode) {
+              if (player_send_snapcast_setting(scSet) != pdPASS) {
+                ESP_LOGE(TAG, "Failed to notify sync task about codec. Did you init player?");
+                return;
+              }
+            } else {
+              ESP_LOGI(TAG, "opus_decoder_task: headless mode - skipping player_send_snapcast_setting");
             }
 #if CONFIG_USE_DSP_PROCESSOR
             if (pcmData && pcmData->fragment && pcmData->fragment->payload) {
@@ -1781,16 +1795,22 @@ static void http_get_task(void *pvParameters)
                         scSet.chkInFrames =
                             decodedSize / ((size_t)scSet.ch *
                                            (size_t)(scSet.bits / 8));
-                        if (player_send_snapcast_setting(&scSet) !=
-                            pdPASS)
-                        {
-                          ESP_LOGE(TAG,
-                                   "Failed to "
-                                   "notify "
-                                   "sync task "
-                                   "about "
-                                   "codec. Did you "
-                                   "init player?");
+                        
+                        // Skip player notification in headless mode
+                        if (!headless_mode) {
+                          if (player_send_snapcast_setting(&scSet) !=
+                              pdPASS)
+                          {
+                            ESP_LOGE(TAG,
+                                     "Failed to "
+                                     "notify "
+                                     "sync task "
+                                     "about "
+                                     "codec. Did you "
+                                     "init player?");
+                        } else {
+                          ESP_LOGI(TAG, "http_get_task: headless mode - skipping player_send_snapcast_setting (codec)");
+                        }
 
                           return;
                         }
@@ -1838,14 +1858,19 @@ static void http_get_task(void *pvParameters)
                           decodedSize /
                           ((size_t)scSet.ch * (size_t)(scSet.bits / 8));
 
-                      if (player_send_snapcast_setting(&scSet) !=
-                          pdPASS)
-                      {
-                        ESP_LOGE(TAG,
-                                 "Failed to notify "
-                                 "sync task about "
-                                 "codec. Did you "
-                                 "init player?");
+                      // Skip player notification in headless mode
+                      if (!headless_mode) {
+                        if (player_send_snapcast_setting(&scSet) !=
+                            pdPASS)
+                        {
+                          ESP_LOGE(TAG,
+                                   "Failed to notify "
+                                   "sync task about "
+                                   "codec. Did you "
+                                   "init player?");
+                      } else {
+                        ESP_LOGI(TAG, "http_get_task: headless mode - skipping player_send_snapcast_setting (codec)");
+                      }
 
                         return;
                       }
@@ -2597,13 +2622,18 @@ static void http_get_task(void *pvParameters)
                   scSet.muted = server_settings_message.muted;
                   scSet.volume = server_settings_message.volume;
 
-                  if (player_send_snapcast_setting(&scSet) != pdPASS)
-                  {
-                    ESP_LOGE(TAG,
-                             "Failed to notify sync task. "
-                             "Did you init player?");
+                  // Skip player notification in headless mode
+                  if (!headless_mode) {
+                    if (player_send_snapcast_setting(&scSet) != pdPASS)
+                    {
+                      ESP_LOGE(TAG,
+                               "Failed to notify sync task. "
+                               "Did you init player?");
 
-                    return;
+                      return;
+                    }
+                  } else {
+                    ESP_LOGI(TAG, "http_get_task: headless mode - skipping player_send_snapcast_setting");
                   }
 
                   free(p_tmp);
@@ -2994,10 +3024,21 @@ static void http_get_task(void *pvParameters)
   }
 }
 
-/*
-
 void app_main(void)
 {
+  printf("app_main() started\n");
+  
+  // In headless mode, we skip all hardware initialization.
+  // This should be the very first thing to be set.
+  #if CONFIG_HEADLESS_MODE
+  headless_mode = true;
+  printf("Headless mode enabled\n");
+  #else
+  printf("Headless mode disabled\n");
+  #endif
+
+  printf("About to initialize NVS\n");
+
   esp_err_t ret = nvs_flash_init();
   if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
       ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
@@ -3006,6 +3047,8 @@ void app_main(void)
     ret = nvs_flash_init();
   }
   ESP_ERROR_CHECK(ret);
+
+  printf("NVS initialized successfully\n");
 
   esp_log_level_set("*", ESP_LOG_INFO);
 
@@ -3019,8 +3062,11 @@ void app_main(void)
   esp_log_level_set("wifi_init", ESP_LOG_WARN);
   esp_log_level_set("TAS5805", ESP_LOG_DEBUG);
   
+  printf("Log levels set, about to configure GPIO\n");
+  
 #if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || \
     CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
+  printf("Configuring Ethernet GPIO\n");
   // clang-format off
   // nINT/REFCLKO Function Select Configuration Strap
   //  • When nINTSEL is floated or pulled to
@@ -3041,44 +3087,83 @@ void app_main(void)
   gpio_reset_pin(GPIO_NUM_5);
   gpio_set_direction(GPIO_NUM_5, GPIO_MODE_INPUT);
   gpio_set_pull_mode(GPIO_NUM_5, GPIO_PULLDOWN_ONLY);
+  printf("Ethernet GPIO configured\n");
 #endif
 
+  printf("About to configure I2S GPIO (headless_mode=%d)\n", headless_mode);
+  
   // ensure there is no noise from DAC
-  {
+  if (!headless_mode) {
+    printf("Configuring I2S pins\n");
     board_i2s_pin_t pin_config0;
     get_i2s_pins(I2S_NUM_0, &pin_config0);
 
-    // Output pins
-    gpio_reset_pin(pin_config0.mck_io_num);
-    gpio_set_direction(pin_config0.mck_io_num, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(pin_config0.mck_io_num, GPIO_FLOATING);
-    gpio_set_level(pin_config0.mck_io_num, 0);
+    // Skip GPIO 0 configuration as it's a bootstrap pin and can cause crashes on ESP32-C5
+    if (pin_config0.mck_io_num != 0) {
+      // Output pins
+      gpio_reset_pin(pin_config0.mck_io_num);
+      gpio_set_direction(pin_config0.mck_io_num, GPIO_MODE_OUTPUT);
+      gpio_set_pull_mode(pin_config0.mck_io_num, GPIO_FLOATING);
+      gpio_set_level(pin_config0.mck_io_num, 0);
+    } else {
+      printf("Skipping GPIO 0 (MCLK) configuration - bootstrap pin\n");
+    }
 
-    gpio_reset_pin(pin_config0.data_out_num);
-    gpio_set_direction(pin_config0.data_out_num, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(pin_config0.data_out_num, GPIO_FLOATING);
-    gpio_set_level(pin_config0.data_out_num, 0);
+    printf("Configuring data_out_num GPIO %d\n", pin_config0.data_out_num);
+    if (pin_config0.data_out_num >= 0 && pin_config0.data_out_num < GPIO_NUM_MAX) {
+      gpio_reset_pin(pin_config0.data_out_num);
+      gpio_set_direction(pin_config0.data_out_num, GPIO_MODE_OUTPUT);
+      gpio_set_pull_mode(pin_config0.data_out_num, GPIO_FLOATING);
+      gpio_set_level(pin_config0.data_out_num, 0);
+      printf("data_out_num GPIO %d configured successfully\n", pin_config0.data_out_num);
+    } else {
+      printf("Skipping invalid data_out_num GPIO %d\n", pin_config0.data_out_num);
+    }
 
-    gpio_reset_pin(pin_config0.bck_io_num);
-    gpio_set_direction(pin_config0.bck_io_num, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(pin_config0.bck_io_num, GPIO_FLOATING);
-    gpio_set_level(pin_config0.bck_io_num, 0);
+    printf("Configuring bck_io_num GPIO %d\n", pin_config0.bck_io_num);
+    if (pin_config0.bck_io_num >= 0 && pin_config0.bck_io_num < GPIO_NUM_MAX) {
+      gpio_reset_pin(pin_config0.bck_io_num);
+      gpio_set_direction(pin_config0.bck_io_num, GPIO_MODE_OUTPUT);
+      gpio_set_pull_mode(pin_config0.bck_io_num, GPIO_FLOATING);
+      gpio_set_level(pin_config0.bck_io_num, 0);
+      printf("bck_io_num GPIO %d configured successfully\n", pin_config0.bck_io_num);
+    } else {
+      printf("Skipping invalid bck_io_num GPIO %d\n", pin_config0.bck_io_num);
+    }
 
-    gpio_reset_pin(pin_config0.ws_io_num);
-    gpio_set_direction(pin_config0.ws_io_num, GPIO_MODE_OUTPUT);
-    gpio_set_pull_mode(pin_config0.ws_io_num, GPIO_FLOATING);
-    gpio_set_level(pin_config0.ws_io_num, 0);
+    printf("Configuring ws_io_num GPIO %d\n", pin_config0.ws_io_num);
+    if (pin_config0.ws_io_num >= 0 && pin_config0.ws_io_num < GPIO_NUM_MAX) {
+      gpio_reset_pin(pin_config0.ws_io_num);
+      gpio_set_direction(pin_config0.ws_io_num, GPIO_MODE_OUTPUT);
+      gpio_set_pull_mode(pin_config0.ws_io_num, GPIO_FLOATING);
+      gpio_set_level(pin_config0.ws_io_num, 0);
+      printf("ws_io_num GPIO %d configured successfully\n", pin_config0.ws_io_num);
+    } else {
+      printf("Skipping invalid ws_io_num GPIO %d\n", pin_config0.ws_io_num);
+    }
+    
+    printf("I2S GPIO configuration completed successfully\n");
 
     // Input pin
-    gpio_reset_pin(pin_config0.data_in_num);
-    gpio_set_direction(pin_config0.data_in_num, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(pin_config0.data_in_num, GPIO_PULLUP_ONLY);
+    printf("Configuring data_in_num GPIO %d\n", pin_config0.data_in_num);
+    if (pin_config0.data_in_num >= 0 && pin_config0.data_in_num < GPIO_NUM_MAX) {
+      gpio_reset_pin(pin_config0.data_in_num);
+      gpio_set_direction(pin_config0.data_in_num, GPIO_MODE_INPUT);
+      gpio_set_pull_mode(pin_config0.data_in_num, GPIO_PULLUP_ONLY);
+      printf("data_in_num GPIO %d configured successfully\n", pin_config0.data_in_num);
+    } else {
+      printf("Skipping invalid data_in_num GPIO %d\n", pin_config0.data_in_num);
+    }
+    
+    printf("All I2S GPIO configuration completed, moving to next section\n");
   }
 
-#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M) && !HEADLESS_MODE_FOR_TESTING
-  // some codecs need i2s mclk for initialization
-    i2s_chan_handle_t tx_chan;
+  printf("About to configure audio board (headless_mode=%d)\n", headless_mode);
 
+#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M)
+  i2s_chan_handle_t tx_chan = NULL;
+  // some codecs need i2s mclk for initialization
+  if (!headless_mode) {
     i2s_chan_config_t tx_chan_cfg = {
         .id = I2S_NUM_0,
         .role = I2S_ROLE_MASTER,
@@ -3120,33 +3205,14 @@ void app_main(void)
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_chan, &tx_std_cfg));
     i2s_channel_enable(tx_chan);
     ESP_LOGI(TAG, "Feeding clock signal on pins clk=%d, ws=%d, dout=%d...", pin_config0.bck_io_num, pin_config0.ws_io_num, pin_config0.data_out_num);
+  }
 #endif
 
-  {
-#if HEADLESS_MODE_FOR_TESTING
+  if (headless_mode) {
     ESP_LOGI(TAG, "HEADLESS MODE: Skipping audio board initialization for testing");
     board_handle = NULL;
-#else
-    ESP_LOGI(TAG, "Start codec chip");
+  } else {
     board_handle = audio_board_init();
-    if (board_handle)
-    {
-      ESP_LOGI(TAG, "Audio board_init done");
-    }
-    else
-    {
-      ESP_LOGE(TAG,
-               "Audio board couldn't be initialized. Check menuconfig if project "
-               "is configured right or check your wiring!");
-
-      vTaskDelay(portMAX_DELAY);
-    }
-
-    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_DECODE,
-                         AUDIO_HAL_CTRL_START);
-    audio_hal_set_mute(board_handle->audio_hal,
-                       true); // ensure no noise is sent after firmware crash
-#endif
   }
 
   {
@@ -3154,8 +3220,8 @@ void app_main(void)
     init_player();
   }
 
-#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M) && !HEADLESS_MODE_FOR_TESTING
-  if (tx_chan)
+#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M)
+  if (!headless_mode && tx_chan)
   {
     i2s_channel_disable(tx_chan);
     i2s_del_channel(tx_chan);
@@ -3210,60 +3276,4 @@ void app_main(void)
   //      continue;
   //    }
   //  }
-}
-*/
-
-void app_main() {
-  ESP_LOGI(TAG, "Start codec chip");
-  
-  // Initialize NVS
-  esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
-  }
-  ESP_ERROR_CHECK(ret);
-  ESP_LOGI(TAG, "NVS initialized successfully");
-  
-  ESP_LOGI(TAG, "About to initialize network...");
-  
-#if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
-  eth_init();
-  init_http_server_task("ETH_DEF");
-#else
-  wifi_init();
-  ESP_LOGI(TAG, "Connected to AP");
-  init_http_server_task("WIFI_STA_DEF");
-#endif
-  
-  ESP_LOGI(TAG, "Network and HTTP server initialized successfully");
-  
-  ESP_LOGI(TAG, "About to start OTA server...");
-  
-  xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
-                          OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
-  
-  ESP_LOGI(TAG, "OTA server started successfully");
-  
-  ESP_LOGI(TAG, "About to initialize player and snapcast...");
-  
-  // Initialize player (no arguments, per player.h)
-  ESP_LOGI(TAG, "About to initialize player...");
-  int player_result = init_player();
-  if (player_result != 0) {
-    ESP_LOGW(TAG, "Player initialization failed (%d), continuing without audio hardware", player_result);
-  } else {
-    ESP_LOGI(TAG, "Player initialized successfully");
-  }
-  
-  ESP_LOGI(TAG, "Starting snapcast client task...");
-  xTaskCreatePinnedToCore(&http_get_task, "snapcast", 4 * 1024, NULL,
-                          HTTP_TASK_PRIORITY, &t_http_get_task,
-                          HTTP_TASK_CORE_ID);
-  ESP_LOGI(TAG, "Snapcast client task started successfully");
-  
-  while (1) {
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    ESP_LOGI(TAG, "Main loop running...");
-  }
 }

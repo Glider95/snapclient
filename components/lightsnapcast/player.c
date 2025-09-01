@@ -1,6 +1,7 @@
-/**
- *
- */
+#include <stdbool.h>
+
+// Headless mode: skip audio board/I2S if true
+extern bool headless_mode;
 
 #include <stdint.h>
 #include <string.h>
@@ -388,6 +389,11 @@ int deinit_player(void) {
  *  call before http task creation!
  */
 int init_player(void) {
+  if (headless_mode) {
+    ESP_LOGW(TAG, "Headless mode enabled: skipping audio hardware initialization");
+    playerTaskHandle = NULL;
+    return 0;
+  }
   int ret = 0;
 
   currentSnapcastSetting.buf_ms = 1000;
@@ -414,18 +420,23 @@ int init_player(void) {
     latencyBufSemaphoreHandle = xSemaphoreCreateMutex();
   }
 
-  // init diff buff median filter
-  latencyMedianFilter.numNodes = LATENCY_MEDIAN_FILTER_LEN;
-  latencyMedianFilter.medianBuffer = latencyMedianLong;
-  reset_latency_buffer();
+  // init diff buff median filter - skip in headless mode
+  extern bool headless_mode;
+  if (!headless_mode) {
+    latencyMedianFilter.numNodes = LATENCY_MEDIAN_FILTER_LEN;
+    latencyMedianFilter.medianBuffer = latencyMedianLong;
+    reset_latency_buffer();
 
-  shortMedianFilter.numNodes = SHORT_BUFFER_LEN;
-  shortMedianFilter.medianBuffer = shortMedianBuffer;
-  MEDIANFILTER_Init(&shortMedianFilter);
+    shortMedianFilter.numNodes = SHORT_BUFFER_LEN;
+    shortMedianFilter.medianBuffer = shortMedianBuffer;
+    MEDIANFILTER_Init(&shortMedianFilter);
 
-  miniMedianFilter.numNodes = MINI_BUFFER_LEN;
-  miniMedianFilter.medianBuffer = miniMedianBuffer;
-  MEDIANFILTER_Init(&miniMedianFilter);
+    miniMedianFilter.numNodes = MINI_BUFFER_LEN;
+    miniMedianFilter.medianBuffer = miniMedianBuffer;
+    MEDIANFILTER_Init(&miniMedianFilter);
+  } else {
+    ESP_LOGI(TAG, "init_player: headless mode - skipping MedianFilter initialization");
+  }
 
   tg0_timer_init();
 
@@ -480,6 +491,12 @@ int8_t player_get_snapcast_settings(snapcastSetting_t *setting) {
  *
  */
 int32_t player_latency_insert(int64_t newValue) {
+  // In headless mode, just return success without doing anything
+  extern bool headless_mode;
+  if (headless_mode) {
+    return 0;
+  }
+
   int64_t medianValue;
 
   medianValue = MEDIANFILTER_Insert(&latencyMedianFilter, newValue);
@@ -565,6 +582,13 @@ int32_t player_send_snapcast_setting(snapcastSetting_t *setting) {
  *
  */
 int32_t reset_latency_buffer(void) {
+  // In headless mode, just return success without doing anything
+  extern bool headless_mode;
+  if (headless_mode) {
+    ESP_LOGI(TAG, "reset_latency_buffer: headless mode - skipping");
+    return 0;
+  }
+
   // init diff buff median filter
   if (MEDIANFILTER_Init(&latencyMedianFilter) < 0) {
     ESP_LOGE(TAG, "reset_diff_buffer: couldn't init median filter long. STOP");
@@ -601,8 +625,9 @@ int32_t latency_buffer_full(bool *is_full, TickType_t wait) {
   }
 
   if (latencyBufSemaphoreHandle == NULL) {
-    ESP_LOGE(TAG, "latency_buffer_full: latencyBufSemaphoreHandle == NULL");
-
+    if (!headless_mode) {
+      ESP_LOGE(TAG, "latency_buffer_full: latencyBufSemaphoreHandle == NULL");
+    }
     return -2;
   }
 
@@ -1194,6 +1219,29 @@ int32_t pcm_chunk_queue_msg_waiting(void) {
  *
  */
 static void player_task(void *pvParameters) {
+  // Check if headless mode is enabled
+  extern bool headless_mode;
+  
+  if (headless_mode) {
+    ESP_LOGI(TAG, "Player task running in headless mode - consuming audio data without hardware");
+    
+    while (1) {
+      // In headless mode, just yield periodically to prevent watchdog reset
+      vTaskDelay(pdMS_TO_TICKS(100));
+      
+      // Optionally consume and discard audio chunks if they exist
+      if (pcmChkQHdl != NULL) {
+        pcm_chunk_message_t *chnk = NULL;
+        if (xQueueReceive(pcmChkQHdl, &chnk, 0) == pdTRUE) {
+          if (chnk != NULL) {
+            free_pcm_chunk(chnk);
+          }
+        }
+      }
+    }
+    return;
+  }
+  
   pcm_chunk_message_t *chnk = NULL;
   int64_t serverNow = 0;
   int64_t age;

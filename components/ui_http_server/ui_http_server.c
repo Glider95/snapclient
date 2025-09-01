@@ -458,6 +458,6 @@ void init_http_server_task(char *key) {
   xQueueHttp = xQueueCreate(10, sizeof(URL_t));
   configASSERT(xQueueHttp);
 
-  xTaskCreatePinnedToCore(http_server_task, "HTTP", 512 * 5, NULL, 2, NULL,
+  xTaskCreatePinnedToCore(http_server_task, "HTTP", 512 * 8, NULL, 2, NULL,
                           tskNO_AFFINITY);
 }

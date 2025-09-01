@@ -44,4 +44,11 @@ menu "Snapclient Configuration"
 
             Both approaches have similar performance keeping clients in sync <= 500µs
 
+    config HEADLESS_MODE
+        bool "Enable headless mode"
+        default false
+        help
+            Enable headless mode to skip all hardware initialization including I2S and audio board setup.
+            This is useful for testing network functionality without audio hardware.
+
 endmenu
