@@ -21,7 +21,8 @@
 
 #define TAG "IMPROV"
 
-#define RD_BUF_SIZE (UART_FIFO_LEN)
+
+#define RD_BUF_SIZE (128)
 #define PATTERN_CHR_NUM (3)
 
 static TaskHandle_t t_improv_task = NULL;

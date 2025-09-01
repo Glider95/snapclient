@@ -8,6 +8,9 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "driver/gpio.h"
+#include "driver/i2s_std.h"
+
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -16,6 +19,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || \
     CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
@@ -85,11 +89,11 @@ SemaphoreHandle_t decoderWriteSemaphore = NULL;
 
 const char *VERSION_STRING = "0.0.3";
 
-#define HTTP_TASK_PRIORITY (configMAX_PRIORITIES - 2) // 9
-#define HTTP_TASK_CORE_ID 1                           // 1  // tskNO_AFFINITY
+#define HTTP_TASK_PRIORITY 0
+#define HTTP_TASK_CORE_ID 0
 
 #define OTA_TASK_PRIORITY 6
-#define OTA_TASK_CORE_ID tskNO_AFFINITY
+#define OTA_TASK_CORE_ID 0
 // 1  // tskNO_AFFINITY
 
 #define FLAC_DECODER_TASK_PRIORITY 7
@@ -126,6 +130,12 @@ static audio_board_handle_t board_handle = NULL;
 
 /* Logging tag */
 static const char *TAG = "SC";
+
+// Simple headless mode for testing (set to 1 to disable audio hardware)
+#define HEADLESS_MODE_FOR_TESTING 1
+
+// Global variable to expose headless mode to other components
+int headless_mode_flag = HEADLESS_MODE_FOR_TESTING;
 
 // static QueueHandle_t playerChunkQueueHandle = NULL;
 SemaphoreHandle_t timeSyncSemaphoreHandle = NULL;
@@ -671,106 +681,72 @@ void opus_decoder_task(void *pvParameters)
       //                                        1000000 +
       //                                        (uint64_t)currentTimestamp.usec);
 
-      if (pOpusData->inData)
-      {
-        int frame_size = 0;
-        int sample_count = 0;
-        int samples_per_frame = 0;
-        int frame_count;
-        opus_int16 *audio;
 
-        samples_per_frame =
-            opus_packet_get_samples_per_frame(pOpusData->inData, scSet->sr);
-        if (samples_per_frame < 0)
-        {
-          ESP_LOGE(TAG,
-                   "couldn't get samples per frame count "
-                   "of packet");
-        }
-
-        scSet->chkInFrames = samples_per_frame;
-
-        size_t bytes = samples_per_frame * scSet->ch * scSet->bits / 8;
-
-        if (samples_per_frame > 480)
-        {
-          ESP_LOGE(TAG, "samples_per_frame: %d, pOpusData->bytes %ld, bytes %u",
-                   samples_per_frame, pOpusData->bytes, bytes);
-        }
-
-        // TODO: insert some break condition if we wait
-        // too long
-        while ((audio = (opus_int16 *)malloc(bytes)) == NULL)
-        {
-          ESP_LOGE(TAG, "couldn't get memory for audio");
-
-          vTaskDelay(pdMS_TO_TICKS(1));
-        }
-
-        frame_size =
-            opus_decode(opusDecoder, pOpusData->inData, pOpusData->bytes,
-                        (opus_int16 *)audio, samples_per_frame, 0);
-
-        free(pOpusData->inData);
-        pOpusData->inData = NULL;
-
-        if (frame_size < 0)
-        {
-          ESP_LOGE(TAG, "Decode error : %d \n", frame_size);
-        }
-        else
-        {
-          pcm_chunk_message_t *pcmData = NULL;
-
-          bytes = frame_size * scSet->ch * scSet->bits / 8;
-          if (allocate_pcm_chunk_memory(&pcmData, bytes) < 0)
-          {
-            pcmData = NULL;
+      if (pOpusData->inData && opusDecoder) {
+        int samples_per_frame = opus_packet_get_samples_per_frame(pOpusData->inData, scSet->sr);
+        if (samples_per_frame < 0) {
+          ESP_LOGE(TAG, "couldn't get samples per frame count of packet");
+          free(pOpusData->inData);
+          pOpusData->inData = NULL;
+          // skip decode, avoid calling opus_decode with bad params
+        } else {
+          scSet->chkInFrames = samples_per_frame;
+          size_t bytes = samples_per_frame * scSet->ch * scSet->bits / 8;
+          if (samples_per_frame > 480) {
+            ESP_LOGE(TAG, "samples_per_frame: %d, pOpusData->bytes %ld, bytes %u",
+                     samples_per_frame, pOpusData->bytes, bytes);
           }
-          else
-          {
-            pcmData->timestamp = currentTimestamp;
-
-            if (pcmData->fragment->payload)
-            {
-              volatile uint32_t *sample;
-              uint32_t tmpData;
-              uint32_t cnt = 0;
-
-              for (int i = 0; i < bytes; i += 4)
-              {
-                sample =
-                    (volatile uint32_t *)(&(pcmData->fragment->payload[i]));
-                tmpData = (((uint32_t)audio[cnt] << 16) & 0xFFFF0000) |
-                          (((uint32_t)audio[cnt + 1] << 0) & 0x0000FFFF);
-                *sample = (volatile uint32_t)tmpData;
-
-                cnt += 2;
-              }
-            }
-
+          opus_int16 *audio = NULL;
+          while ((audio = (opus_int16 *)malloc(bytes)) == NULL) {
+            ESP_LOGE(TAG, "couldn't get memory for audio");
+            vTaskDelay(pdMS_TO_TICKS(1));
+          }
+          int frame_size = opus_decode(opusDecoder, pOpusData->inData, pOpusData->bytes,
+                                      audio, samples_per_frame, 0);
+          free(pOpusData->inData);
+          pOpusData->inData = NULL;
+          if (frame_size < 0) {
+            ESP_LOGE(TAG, "Decode error : %d \n", frame_size);
             free(audio);
-            audio = NULL;
-          }
-
-          if (player_send_snapcast_setting(scSet) != pdPASS)
-          {
-            ESP_LOGE(TAG,
-                     "Failed to notify "
-                     "sync task about "
-                     "codec. Did you "
-                     "init player?");
-
-            return;
-          }
-
+          } else {
+            pcm_chunk_message_t *pcmData = NULL;
+            bytes = frame_size * scSet->ch * scSet->bits / 8;
+            if (allocate_pcm_chunk_memory(&pcmData, bytes) < 0) {
+              pcmData = NULL;
+            } else {
+              pcmData->timestamp = currentTimestamp;
+              if (pcmData->fragment->payload) {
+                volatile uint32_t *sample;
+                uint32_t tmpData;
+                uint32_t cnt = 0;
+                for (int i = 0; i < bytes; i += 4) {
+                  sample = (volatile uint32_t *)(&(pcmData->fragment->payload[i]));
+                  tmpData = (((uint32_t)audio[cnt] << 16) & 0xFFFF0000) |
+                            (((uint32_t)audio[cnt + 1] << 0) & 0x0000FFFF);
+                  *sample = (volatile uint32_t)tmpData;
+                  cnt += 2;
+                }
+              }
+              free(audio);
+              audio = NULL;
+            }
+            if (player_send_snapcast_setting(scSet) != pdPASS) {
+              ESP_LOGE(TAG, "Failed to notify sync task about codec. Did you init player?");
+              return;
+            }
 #if CONFIG_USE_DSP_PROCESSOR
-          dsp_processor_worker(pcmData->fragment->payload,
-                               pcmData->fragment->size, scSet->sr);
+            if (pcmData && pcmData->fragment && pcmData->fragment->payload) {
+              dsp_processor_worker(pcmData->fragment->payload,
+                                   pcmData->fragment->size, scSet->sr);
+            }
 #endif
-
-          insert_pcm_chunk(pcmData);
+            if (pcmData) {
+              insert_pcm_chunk(pcmData);
+            }
+          }
         }
+      } else {
+        ESP_LOGW(TAG, "opus_decoder_task: pOpusData->inData is NULL or opusDecoder not initialized, skipping decode");
       }
 
       free(pOpusData);
@@ -2594,8 +2570,10 @@ static void http_get_task(void *pvParameters)
                           (double)server_settings_message.volume / 100);
                     }
 #endif
-                    audio_hal_set_mute(board_handle->audio_hal,
-                                       server_settings_message.muted);
+                    if (board_handle && board_handle->audio_hal) {
+                      audio_hal_set_mute(board_handle->audio_hal,
+                                         server_settings_message.muted);
+                    }
                   }
 
                   if (scSet.volume != server_settings_message.volume)
@@ -2607,8 +2585,10 @@ static void http_get_task(void *pvParameters)
                           (double)server_settings_message.volume / 100);
                     }
 #else
-                    audio_hal_set_volume(board_handle->audio_hal,
-                                         server_settings_message.volume);
+                    if (board_handle && board_handle->audio_hal) {
+                      audio_hal_set_volume(board_handle->audio_hal,
+                                           server_settings_message.volume);
+                    }
 #endif
                   }
 
@@ -3014,9 +2994,8 @@ static void http_get_task(void *pvParameters)
   }
 }
 
-/**
- *
- */
+/*
+
 void app_main(void)
 {
   esp_err_t ret = nvs_flash_init();
@@ -3059,12 +3038,9 @@ void app_main(void)
   // for MAC unit.
   //
   // clang-format on
-  gpio_config_t cfg = {.pin_bit_mask = BIT64(GPIO_NUM_5),
-                       .mode = GPIO_MODE_DEF_INPUT,
-                       .pull_up_en = GPIO_PULLUP_DISABLE,
-                       .pull_down_en = GPIO_PULLDOWN_ENABLE,
-                       .intr_type = GPIO_INTR_DISABLE};
-  gpio_config(&cfg);
+  gpio_reset_pin(GPIO_NUM_5);
+  gpio_set_direction(GPIO_NUM_5, GPIO_MODE_INPUT);
+  gpio_set_pull_mode(GPIO_NUM_5, GPIO_PULLDOWN_ONLY);
 #endif
 
   // ensure there is no noise from DAC
@@ -3072,28 +3048,34 @@ void app_main(void)
     board_i2s_pin_t pin_config0;
     get_i2s_pins(I2S_NUM_0, &pin_config0);
 
-    gpio_config_t gpioCfg = {
-        .pin_bit_mask =
-            BIT64(pin_config0.mck_io_num) | BIT64(pin_config0.data_out_num) |
-            BIT64(pin_config0.bck_io_num) | BIT64(pin_config0.ws_io_num),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&gpioCfg);
+    // Output pins
+    gpio_reset_pin(pin_config0.mck_io_num);
+    gpio_set_direction(pin_config0.mck_io_num, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(pin_config0.mck_io_num, GPIO_FLOATING);
     gpio_set_level(pin_config0.mck_io_num, 0);
+
+    gpio_reset_pin(pin_config0.data_out_num);
+    gpio_set_direction(pin_config0.data_out_num, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(pin_config0.data_out_num, GPIO_FLOATING);
     gpio_set_level(pin_config0.data_out_num, 0);
+
+    gpio_reset_pin(pin_config0.bck_io_num);
+    gpio_set_direction(pin_config0.bck_io_num, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(pin_config0.bck_io_num, GPIO_FLOATING);
     gpio_set_level(pin_config0.bck_io_num, 0);
+
+    gpio_reset_pin(pin_config0.ws_io_num);
+    gpio_set_direction(pin_config0.ws_io_num, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode(pin_config0.ws_io_num, GPIO_FLOATING);
     gpio_set_level(pin_config0.ws_io_num, 0);
 
-    gpioCfg.pin_bit_mask = BIT64(pin_config0.data_in_num);
-    gpioCfg.mode = GPIO_MODE_INPUT;
-    gpioCfg.pull_up_en = GPIO_PULLUP_ENABLE;
-    gpio_config(&gpioCfg);
+    // Input pin
+    gpio_reset_pin(pin_config0.data_in_num);
+    gpio_set_direction(pin_config0.data_in_num, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(pin_config0.data_in_num, GPIO_PULLUP_ONLY);
   }
 
-#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M)
+#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M) && !HEADLESS_MODE_FOR_TESTING
   // some codecs need i2s mclk for initialization
     i2s_chan_handle_t tx_chan;
 
@@ -3109,11 +3091,11 @@ void app_main(void)
     board_i2s_pin_t pin_config0;
     get_i2s_pins(I2S_NUM_0, &pin_config0);
 
-    i2s_std_clk_config_t i2s_clkcfg = {
-        .sample_rate_hz = 44100,
-        .clk_src = I2S_CLK_SRC_APLL,
-        .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-    };
+  i2s_std_clk_config_t i2s_clkcfg = {
+    .sample_rate_hz = 44100,
+    .clk_src = I2S_CLK_SRC_DEFAULT,
+    .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+  };
     i2s_std_config_t tx_std_cfg = {
         .clk_cfg = i2s_clkcfg,
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
@@ -3141,6 +3123,10 @@ void app_main(void)
 #endif
 
   {
+#if HEADLESS_MODE_FOR_TESTING
+    ESP_LOGI(TAG, "HEADLESS MODE: Skipping audio board initialization for testing");
+    board_handle = NULL;
+#else
     ESP_LOGI(TAG, "Start codec chip");
     board_handle = audio_board_init();
     if (board_handle)
@@ -3160,6 +3146,7 @@ void app_main(void)
                          AUDIO_HAL_CTRL_START);
     audio_hal_set_mute(board_handle->audio_hal,
                        true); // ensure no noise is sent after firmware crash
+#endif
   }
 
   {
@@ -3167,7 +3154,7 @@ void app_main(void)
     init_player();
   }
 
-#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M)
+#if CONFIG_AUDIO_BOARD_CUSTOM && (CONFIG_DAC_ADAU1961 || CONFIG_DAC_TAS5805M) && !HEADLESS_MODE_FOR_TESTING
   if (tx_chan)
   {
     i2s_channel_disable(tx_chan);
@@ -3223,4 +3210,60 @@ void app_main(void)
   //      continue;
   //    }
   //  }
+}
+*/
+
+void app_main() {
+  ESP_LOGI(TAG, "Start codec chip");
+  
+  // Initialize NVS
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
+  ESP_LOGI(TAG, "NVS initialized successfully");
+  
+  ESP_LOGI(TAG, "About to initialize network...");
+  
+#if CONFIG_SNAPCLIENT_USE_INTERNAL_ETHERNET || CONFIG_SNAPCLIENT_USE_SPI_ETHERNET
+  eth_init();
+  init_http_server_task("ETH_DEF");
+#else
+  wifi_init();
+  ESP_LOGI(TAG, "Connected to AP");
+  init_http_server_task("WIFI_STA_DEF");
+#endif
+  
+  ESP_LOGI(TAG, "Network and HTTP server initialized successfully");
+  
+  ESP_LOGI(TAG, "About to start OTA server...");
+  
+  xTaskCreatePinnedToCore(&ota_server_task, "ota", 14 * 256, NULL,
+                          OTA_TASK_PRIORITY, &t_ota_task, OTA_TASK_CORE_ID);
+  
+  ESP_LOGI(TAG, "OTA server started successfully");
+  
+  ESP_LOGI(TAG, "About to initialize player and snapcast...");
+  
+  // Initialize player (no arguments, per player.h)
+  ESP_LOGI(TAG, "About to initialize player...");
+  int player_result = init_player();
+  if (player_result != 0) {
+    ESP_LOGW(TAG, "Player initialization failed (%d), continuing without audio hardware", player_result);
+  } else {
+    ESP_LOGI(TAG, "Player initialized successfully");
+  }
+  
+  ESP_LOGI(TAG, "Starting snapcast client task...");
+  xTaskCreatePinnedToCore(&http_get_task, "snapcast", 4 * 1024, NULL,
+                          HTTP_TASK_PRIORITY, &t_http_get_task,
+                          HTTP_TASK_CORE_ID);
+  ESP_LOGI(TAG, "Snapcast client task started successfully");
+  
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    ESP_LOGI(TAG, "Main loop running...");
+  }
 }

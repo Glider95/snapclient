@@ -1,7 +1,9 @@
 #ifndef __PLAYER_H__
 #define __PLAYER_H__
 
-#include "driver/i2s.h"
+#include "driver/i2s_std.h" 
+#include "driver/i2s_pdm.h" 
+#include "driver/i2s_tdm.h" 
 #include "esp_types.h"
 #include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"

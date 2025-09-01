@@ -31,6 +31,7 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
 #include "i2c_bus.h"
 
 #if defined(CONFIG_ESP_LYRAT_V4_3_BOARD) || \
@@ -568,7 +569,7 @@ esp_err_t es8388_get_voice_mute(void) {
  *     - (-1) Parameter error
  *     - (0)   Success
  */
-esp_err_t es8388_config_dac_output(int output) {
+esp_err_t es8388_config_dac_output(es_dac_output_t output) {
   esp_err_t res;
   uint8_t reg = 0;
   res = es_read_reg(ES8388_DACPOWER, &reg);

@@ -31,6 +31,8 @@
 #include "audio_volume.h"
 #include "board.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+
 #include "i2c_bus.h"
 
 /* ES8311 address

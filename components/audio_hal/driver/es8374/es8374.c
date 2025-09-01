@@ -30,6 +30,8 @@
 
 #include "board_pins_config.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+
 #include "esp_system.h"
 #include "i2c_bus.h"
 

@@ -13,6 +13,7 @@
 // #include "lwip/stats.h"
 
 #include "esp_log.h"
+#include "esp_private/rtc_clk.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "soc/rtc.h"
@@ -33,7 +34,7 @@
 #define USE_SAMPLE_INSERTION CONFIG_USE_SAMPLE_INSERTION
 
 #define SYNC_TASK_PRIORITY (configMAX_PRIORITIES - 1)
-#define SYNC_TASK_CORE_ID 1  // tskNO_AFFINITY
+#define SYNC_TASK_CORE_ID 0  // tskNO_AFFINITY
 
 static const char *TAG = "PLAYER";
 
@@ -198,6 +199,7 @@ static esp_err_t player_setup_i2s(i2s_port_t i2sNum,
   fi2s_clk = 2 * setting->sr *
              I2S_MCLK_MULTIPLE_256;  // setting->ch * setting->bits * m_scale;
 
+#ifdef CONFIG_IDF_TARGET_ESP32
   apll_normal_predefine[0] = setting->bits;
   apll_normal_predefine[1] = setting->sr;
   if (rtc_clk_apll_coeff_calc(
@@ -226,6 +228,7 @@ static esp_err_t player_setup_i2s(i2s_port_t i2sNum,
     ESP_LOGE(TAG, "ERROR, fi2s_clk * %f", LOWER_SR_SCALER);
   }
 #endif
+#endif
 
   ESP_LOGI(TAG, "player_setup_i2s: dma_buf_len is %ld, dma_buf_count is %ld",
            i2sDmaBufMaxLen, i2sDmaBufCnt);
@@ -252,12 +255,12 @@ static esp_err_t player_setup_i2s(i2s_port_t i2sNum,
 
   i2s_std_clk_config_t i2s_clkcfg = {
       .sample_rate_hz = setting->sr,
-      .clk_src =
-      #ifdef CONFIG_IDF_TARGET_ESP32S3
-          I2S_CLK_SRC_DEFAULT,
-      #else
-          I2S_CLK_SRC_APLL,
-      #endif
+    .clk_src =
+    #ifdef CONFIG_IDF_TARGET_ESP32S3
+      I2S_CLK_SRC_DEFAULT,
+    #else
+      I2S_CLK_SRC_XTAL,
+    #endif
       .mclk_multiple = I2S_MCLK_MULTIPLE_256,
   };
   i2s_std_config_t tx_std_cfg = {
@@ -429,9 +432,13 @@ int init_player(void) {
   if (playerTaskHandle == NULL) {
     ESP_LOGI(TAG, "Start player_task");
 
+    int core_id = 0;
+#if defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)
+    core_id = 1;
+#endif
     xTaskCreatePinnedToCore(player_task, "player", 2048 + 512, NULL,
                             SYNC_TASK_PRIORITY, &playerTaskHandle,
-                            SYNC_TASK_CORE_ID);
+                            core_id);
   }
 
   ESP_LOGI(TAG, "init player done");

@@ -30,6 +30,8 @@
 
 #include "board.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+
 #include "i2c_bus.h"
 
 #define MCLK_PULSES_NUMBER (20)
